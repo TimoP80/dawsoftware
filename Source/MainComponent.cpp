@@ -216,20 +216,33 @@ void MainComponent::releaseResources()
 void MainComponent::paint(juce::Graphics& graphics)
 {
     graphics.fillAll(backgroundColour);
-    graphics.setColour(borderColour);
-    graphics.drawHorizontalLine(64, 0.0f, static_cast<float>(getWidth()));
-    graphics.drawVerticalLine(256, 64.0f, static_cast<float>(getHeight()));
-    graphics.drawVerticalLine(getWidth() - 264, 64.0f, static_cast<float>(getHeight()));
     graphics.setColour(panelColour);
+    graphics.fillRect(0, 0, getWidth(), 64);
     graphics.fillRect(0, 65, 256, getHeight() - 65);
     graphics.fillRect(getWidth() - 263, 65, 263, getHeight() - 65);
+
+    graphics.setColour(accentColour);
+    graphics.fillRoundedRectangle(20.0f, 20.0f, 14.0f, 14.0f, 4.0f);
+    graphics.setColour(mutedTextColour);
+    graphics.setFont(juce::Font(9.0f, juce::Font::bold));
+    graphics.drawText("MULTITRACK AUDIO WORKSPACE", 42, 37, 220, 14,
+                      juce::Justification::centredLeft);
+
+    graphics.setColour(borderColour);
+    graphics.drawHorizontalLine(64, 0.0f, static_cast<float>(getWidth()));
+    graphics.drawVerticalLine(256, 65.0f, static_cast<float>(getHeight()));
+    graphics.drawVerticalLine(getWidth() - 264, 65.0f, static_cast<float>(getHeight()));
+    graphics.setColour(borderColour.withAlpha(0.65f));
+    graphics.drawHorizontalLine(112, 16.0f, 240.0f);
+    graphics.drawHorizontalLine(112, static_cast<float>(getWidth() - 248),
+                                static_cast<float>(getWidth() - 16));
 }
 
 void MainComponent::resized()
 {
     const auto width = getWidth();
     const auto height = getHeight();
-    titleLabel.setBounds(24, 0, 190, 64);
+    titleLabel.setBounds(38, 5, 220, 30);
     playButton.setBounds(280, 14, 76, 36);
     stopButton.setBounds(364, 14, 76, 36);
     timeLabel.setBounds(454, 14, 130, 36);
@@ -511,11 +524,26 @@ void MainComponent::ArrangementView::paint(juce::Graphics& graphics)
 
     constexpr int secondsVisible = 16;
     const auto timelineWidth = juce::jmax(1, getWidth() - labelWidth);
+    graphics.setColour(mutedTextColour);
+    graphics.setFont(juce::Font(9.0f, juce::Font::bold));
+    graphics.drawText("TRACKS", 14, 0, labelWidth - 24, headerHeight,
+                      juce::Justification::centredLeft);
+
     for (int second = 0; second <= secondsVisible; ++second)
     {
         const auto x = labelWidth + second * timelineWidth / secondsVisible;
         graphics.setColour(borderColour.withAlpha(second % 4 == 0 ? 0.8f : 0.38f));
         graphics.drawVerticalLine(x, static_cast<float>(headerHeight), static_cast<float>(getHeight()));
+        if (second < secondsVisible)
+        {
+            for (int subdivision = 1; subdivision < 4; ++subdivision)
+            {
+                const auto tickX = x + subdivision * timelineWidth / (secondsVisible * 4);
+                graphics.setColour(borderColour.withAlpha(0.2f));
+                graphics.drawVerticalLine(tickX, static_cast<float>(headerHeight),
+                                          static_cast<float>(getHeight()));
+            }
+        }
         if (second < secondsVisible)
         {
             graphics.setColour(mutedTextColour);
@@ -526,6 +554,24 @@ void MainComponent::ArrangementView::paint(juce::Graphics& graphics)
     }
 
     const juce::ScopedLock lock(main.audioLock);
+    if (main.tracks.empty())
+    {
+        const auto messageBounds = juce::Rectangle<int>(labelWidth + 24, headerHeight + 44,
+                                                         juce::jmax(0, timelineWidth - 48),
+                                                         juce::jmax(0, getHeight() - headerHeight - 88));
+        if (messageBounds.getHeight() >= 72)
+        {
+            graphics.setColour(textColour);
+            graphics.setFont(juce::Font(17.0f, juce::Font::bold));
+            graphics.drawText("Your arrangement starts here", messageBounds.removeFromTop(34),
+                              juce::Justification::centred);
+            graphics.setColour(mutedTextColour);
+            graphics.setFont(juce::Font(12.0f));
+            graphics.drawText("Add a sample from the library or drop an audio file into this area.",
+                              messageBounds, juce::Justification::centred, true);
+        }
+    }
+
     for (size_t index = 0; index < main.tracks.size(); ++index)
     {
         const auto y = headerHeight + static_cast<int>(index) * trackRowHeight;
@@ -534,28 +580,38 @@ void MainComponent::ArrangementView::paint(juce::Graphics& graphics)
         const auto& track = *main.tracks[index];
         if (static_cast<int>(index) == main.selectedTrack)
         {
-            graphics.setColour(juce::Colour(0xff202628));
+            graphics.setColour(juce::Colour(0xff22292a));
             graphics.fillRect(0, y, getWidth(), trackRowHeight);
+            graphics.setColour(accentColour);
+            graphics.fillRect(0, y + 1, 3, trackRowHeight - 2);
         }
 
         graphics.setColour(borderColour.withAlpha(0.65f));
         graphics.drawHorizontalLine(y + trackRowHeight - 1, 0.0f, static_cast<float>(getWidth()));
-        graphics.setColour(textColour);
+        const auto trackMuted = track.muted.load();
+        graphics.setColour(trackMuted ? mutedTextColour : textColour);
         graphics.setFont(juce::Font(12.0f, juce::Font::bold));
-        graphics.drawFittedText(track.name, 14, y + 9, labelWidth - 24, 20,
+        graphics.drawFittedText(track.name, 14, y + 9, labelWidth - 40, 20,
                                 juce::Justification::centredLeft, 1);
         graphics.setColour(mutedTextColour);
         graphics.setFont(juce::Font(10.0f));
-        graphics.drawText(track.effect ? track.effect->getName() : "AUDIO", 14, y + 33, labelWidth - 24, 18,
+        graphics.drawText(trackMuted ? "MUTED" : (track.effect ? track.effect->getName() : "AUDIO"),
+                          14, y + 33, labelWidth - 24, 18,
                           juce::Justification::centredLeft, true);
+        graphics.setColour(mutedTextColour.withAlpha(0.7f));
+        graphics.setFont(juce::Font(9.0f, juce::Font::bold));
+        graphics.drawText(juce::String(static_cast<int>(index) + 1).paddedLeft('0', 2),
+                          labelWidth - 28, y + 10, 18, 16, juce::Justification::centredRight);
 
         const auto clipWidth = juce::jlimit(24, timelineWidth,
             static_cast<int>(track.durationSeconds / secondsVisible * timelineWidth));
         const auto clip = juce::Rectangle<int>(labelWidth + 3, y + 11, clipWidth - 6, trackRowHeight - 22);
-        graphics.setColour(static_cast<int>(index) == main.selectedTrack
-                               ? juce::Colour(0xff7d923a) : juce::Colour(0xff365a5c));
+        graphics.setColour(trackMuted ? juce::Colour(0xff303638)
+                           : static_cast<int>(index) == main.selectedTrack
+                               ? juce::Colour(0xff53632f) : juce::Colour(0xff2e4b4d));
         graphics.fillRoundedRectangle(clip.toFloat(), 4.0f);
-        graphics.setColour(static_cast<int>(index) == main.selectedTrack
+        graphics.setColour(trackMuted ? mutedTextColour.withAlpha(0.55f)
+                           : static_cast<int>(index) == main.selectedTrack
                                ? accentColour : juce::Colour(0xff83c7bd));
         const auto& waveform = track.waveform;
         if (!waveform.empty())
